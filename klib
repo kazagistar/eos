@@ -1,0 +1,45 @@
+-- Metatable pairs
+local originalPairs = pairs
+function pairs(t)
+  local p = getmetatable(t).__pairs or originalPairs
+  if p == pairs then return originalPairs(t) end
+  return p(t)
+end
+
+-- With function by Neppy
+function with(scope)
+  local cEnv = {}  
+  local oEnv = getfenv(2)
+  local cEnvMT = {}
+  local outT = {}
+  local outMT = {}
+ 
+  outMT.__index = function(t,k)
+    return oEnv[k]
+  end
+ 
+  outMT.__newindex = function(t,k,v)
+    oEnv[k]=v
+  end
+ 
+  outMT.__call = function(...)
+    setfenv(2,oEnv)
+    oEnv = nil
+  end
+  setmetatable(outT,outMT)
+ 
+  cEnvMT.__index = function(t,k)
+    if k == "out" then
+      return outT
+    else
+      return scope[k] or outT[k]
+    end
+  end
+ 
+  cEnvMT.__newindex = function(t,k,v)
+    scope[k]=v
+  end
+ 
+  setmetatable(cEnv,cEnvMT)  
+  setfenv(2,cEnv)
+end
