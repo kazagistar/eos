@@ -1,158 +1,127 @@
-function Class(name, parent)
-    assert(type(name) == "string", "Must provide a class name string")
-    if parent then
-        assert(type(parent) == "table", "Parent must be a table")
-    end
-    local methods = {}
-    local object_mt = {__index = methods}
-    local class_mt = {
-        __call = function(t, ...)
-            assert(type(t.new) == "function", "Class "..name.."missing 'new(...) function")
-            local object = {}
-            setmetatable(object, object_mt)
-            object:new(...)
-            return object
-        end
-    }
-    if parent then
-        class_mt.__index = parent
-        methods._parent = parent
-    end
-    setmetatable(methods, class_mt)
-    return methods
-end
-
---[[ Creates a buffer that lets you write to multiple terminals as if you were
-only writing to one. Extends colors to allow "default colors" to be used (ie,
-use whatever colors the background interface currently has active) ]]--
-
-Buffer = Class("Buffer")
-
-local function Buffer_colorToChar(color)
-    return string.format("%x", math.floor(math.log(clr) / math.log(2)))
-end
-
-local function Buffer_charToColor(char)
-    return 2 ^ char:byte()
-end
-
-function Buffer:new(xsize, ysize, colored, defTextColor, defBackColor)
-    -- only modify any following values via the buffer proxy
-    self.xsize = tonumber(xsize)
-    self.ysize = tonumber(ysize)
-    self.colored = not not colored
-    self:setCursorPos(1, 1)
-    self.blinking = true
-    self.text = {}
+--[[ Creates a buffer that stores written data]]--
+buffer = {}
+function buffer.create(xsize, ysize, blink, defTextColor, defBackColor)
+    local buff = {}
+    buff.xsize = xsize
+    buff.ysize = ysize
+    buff.blink = blink or false
+    buff.defTextColor = defTextColor
+    buff.defBackColor = defBackColor
+    buff.colored = not not (defTextColor and defBackColor)
+    assert(buff.colored or not (defTextColor or defBackColor),
+        "Must set both defaults or neither")
     
-    if not self.colored then return end
+    buff.xcursor = 1
+    buff.ycursor = 1
+    buff.lines = {}
     
-    self.defTextColor = Buffer_colorToChar(defTextColor or colors.white)
-    self.defBackColor = Buffer_colorToChar(defBackColor or colors.black)
-    self.curTextColor = self.defTextColor
-    self.curBackColor = self.defBackColor
-    self.textColor = {}
-    self.backColor = {}
+    --buff.textColor and buff.backColor start nil
+    
+    return buff
 end
 
-function Buffer:write(text)
-    local x,y = self.cursorX, self.cursorY
-    local len = text:len()
-    self:setCursorPos(x + len, y)
-    local line = self.text[y]
+function buffer.write(buff, str)
+    local x, y = buff.xcursor, buff.ycursor
+    local len = str:len()
+    buffer.setCursorPos(buff,x+len,y)
+    local line = buff.lines[y]
     if not line then
-        line = string.rep(" ", self.xsize - (x+len))
-        line = string.rep(" ", x - 1) .. text .. line
-    else
-        line = line:sub(1,x-1) .. text .. line:sub(x + len)
+        line = {{}}
+        buff.lines[y] = line
     end
-    self.text[y] = line:sub(1, self.xsize)
-    
-    if not self.colored then return end
-    
-    local t, b = self.textColor[y], self.backColor[y]
-    local tFill = string.rep(self.curTextColor, math.min(len+x, self.xsize))
-    local bFill = string.rep(self.curBackColor, math.min(len+x, self.xsize))
-    if not t then
-        self.textColor[y] = string.rep(self.defTextColor, x - 1) .. tFill
-                .. string.rep(self.defTextColor, self.xsize - (x+len))
-        self.backColor[y] = string.rep(self.defBackColor, x - 1) .. bFill
-                .. string.rep(self.defBackColor, self.xsize - (x+len))
-    else
-        self.textColor[y] = t:sub(1,x-1) .. tFill .. t:sub(x + len)
-        self.backColor[y] = b:sub(1,x-1) .. tFill .. b:sub(x + len)
+    local text, textColor, backColor = unpack(line)
+    for i=1,len do
+        -- print("Writing "..str:sub(i,i).."["..tostring(i).."] to ("..tostring(i+x-1)..", "..y..")")
+        text[i+x-1] = str:sub(i,i)
     end
-end
-
-function Buffer:clear()
-    self.text = {}
-    if colored then
-        self.textColor = {}
-        self.backColor = {}
-    end
-end
-
-function Buffer:clearLine()
-    self.text[y] = nil
-    if colored then
-        self.textColor[y] = nil
-        self.backColor[y] = nil
-    end
-end
-
-function Buffer:getCursorPos()
-    return self.cursorX, self.cursorY
-end
-
-function Buffer:setCursorPos(x, y)
-    self.cursorX = math.max(math.min(x, self.xsize), 1)
-    self.cursorY = math.max(math.min(y, self.ysize), 1)
-end
-
-function Buffer:setCursorBlink(bool)
-    self.blinking = bool
-end
-    
-function Buffer:isColor()
-    return buffer.colored
-end
-    
-function Buffer:getSize()
-    return self.xsize, self.ysize
-end
-
-local function scrolled(old, number)
-    local new = {}
-    for index, value in pairs(old) do
-        if index > number then
-            newtext[index - number] = value
+    local color = buff.textColor
+    if color then
+        if not textColor then
+            textColor = {}
+            line[2] = textColor
+        end
+        for i=x,len+x-1 do
+            textColor[i] = color
+        end
+    elseif textColor then
+        for i=x,len+x-1 do
+            textColor[i] = nil
         end
     end
-    return new
-end
-
-function Buffer:scroll(n)
-    self.text = scrolled(self.text, n)
-    if colored then
-        self.textColor = scrolled(self.textColor, n)
-        self.backColor = scrolled(self.backColor, n)
+    local color = buff.backColor
+    if color then
+        if not backColor then
+            backColor = {}
+            line[3] = backColor
+        end
+        for i=x,len+x-1 do
+            backColor[i] = color
+        end
+    elseif textColor then
+        for i=x,len+x-1 do
+            backColor[i] = nil
+        end
     end
 end
 
-function Buffer:setTextColor(color)
-    assert(self.colored, "Cannot set text color")
-    self.curTextColor = Buffer_colorToChar(color)
+function buffer.clear(buff)
+    buff.lines = {}
 end
 
-function Buffer:setBackgroundColor(color)
-    assert(self.colored, "Cannot set background color")
-    self.curBackColor = Buffer_colorToChar(color)
+function buffer.clearLine(buff)
+    buff.lines[buff.ycursor] = nil
 end
-    
 
-buffy = Buffer(10,10)
-buffy:write("test")
-buffy:write("blarf")
-buffy:setCursorPos(3,1)
-buffy:write("hello")
-print(buffy.text[1]:len())
+function buffer.getCursorPos(buff)
+    return buff.xcursor, buff.ycursor
+end
+
+function buffer.setCursorPos(buff, x, y)
+    buff.xcursor = math.min(x, buff.xsize)
+    buff.ycursor = math.min(y, buff.ysize)
+end
+
+function buffer.setCursorBlink(buff, bool)
+    buff.blink = bool
+end
+
+function buffer.isColor(buff)
+    return buff.colored
+end
+
+function buffer.getSize(buff)
+    return buff.xsize, buff.ysize
+end
+
+function scroll(buff, n)
+    local new = {}
+    for k, v in pairs(buff.lines) do
+        if k>n then
+            new[k+n] = v
+        end
+    end
+    buff.lines = new
+end
+
+-- These should not be added to an uncolored buffer
+function buffer.setTextColor(buff, color)
+    if color == buff.defTextColor then 
+        buff.textColor = nil
+    else
+        buff.textColor = color
+    end
+end
+function buffer.setBackgroundColor(buff, color)
+    if color == buff.defBackColor then 
+        buff.backColor = nil
+    else
+        buff.backColor = color
+    end
+end
+
+b = buffer.create(10,10)
+buffer.write(b,"test")
+buffer.write(b,"stuff")
+buffer.setCursorPos(b,3,1)
+buffer.write(b,"hello")
+print(b.lines[1][1][2])
