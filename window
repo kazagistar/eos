@@ -1,0 +1,132 @@
+function Class(name, parent)
+    assert(type(name) == "string", "Must provide a class name string")
+    if parent then
+        assert(type(parent) == "string", "Parent must be a table")
+    end
+    local methods = {}
+    local object_mt = {__index = methods}
+    local class_mt = {
+        __call = function(t, ...)
+            assert(type(t.new) == "function", "Class "..name.."missing 'new(...) function")
+            local object = {}
+            setmetatable(object, object_mt)
+            object:new(...)
+            return object
+        end
+    }
+    if parent then
+        class_mt.__index = parent
+        methods._parent = parent
+    end
+    setmetatable(methods, class_mt)
+    return methods
+end
+
+--[[ Creates a buffer that lets you write to multiple terminals as if you were
+only writing to one. Extends colors to allow "default colors" to be used (ie,
+use whatever colors the background interface currently has active) ]]--
+
+Buffer = Class("Frame")
+
+function Buffer:new(xsize, ysize, colored)
+    -- only modify any following values via the buffer proxy
+    self.xsize = xsize
+    self.ysize = ysize
+    self.colored = false and self.colored
+    self.cursorX, self.cursorY = 1, 1
+    self.blinking = true
+    
+    -- buffers to store the data
+    self.text = {}
+    self.textStart = {}
+    textColors = {}
+end
+
+
+function Buffer:write(text)
+    local x,y = self.cursorX, self.cursorY
+    self.cursorX = self.cursorX + text:len()
+    if self.cursorY > self.ysize then return end
+    local p,t = self.textStart[y], self.text[y]
+    
+    -- no existing text in buffer?
+    if not t then
+        self.text[y] = text
+        self.textStart[y] = x
+        return
+    end
+    
+    --construct string in order
+    local buff = ""
+    if x > p then -- old before new?
+        if x > p + t:len() then -- ...entirely?
+            self.text[y] = text..string.rep(" ", x - (p + t:len()))..t
+            return
+        else -- grab the first bit of the old string then
+            buff = buff..t:sub(1, x-p)
+        end
+    end
+    buff = buff..text
+    if x + text:len() < p then -- old entirely after new?
+       self.text[y] = buff..string.rep(p - (x + text:len()))..p
+       self.textStart[y] = x
+       return
+    end
+    self.text[y] = buff..t:sub((x+text:len()) - p + 1)
+    if buff:len() > 0 then
+        self.textStart[y] = p
+    else
+        self.textStart[y] = x
+    end
+end
+
+function Buffer:clear()
+    self.text = {}
+    self.textStart = {}
+end
+
+function Buffer:clearLine()
+    self.text[y] = nil
+    self.textStart[y] = nil
+end
+
+function Buffer:getCursorPos()
+    return self.cursorX, self.cursorY
+end
+
+function Buffer:setCursorPos(x, y)
+    self.cursorX, self.cursorY = x, y
+end
+
+function Buffer:setCursorBlink(bool)
+    self.blinking = bool
+end
+    
+function Buffer:isColor()
+    return false
+end
+    
+function Buffer:getSize()
+    return self.xsize, self.ysize
+end
+
+function Buffer:scroll(n)
+    local newtext = {}
+    for index, value in pairs(self.text) do
+        if index > n then
+            newtext[index - n] = value
+        end
+    end
+end
+
+
+ColoredBuffer = Class("ColoredBuffer", Buffer)
+
+function ColoredBuffer:new(xsize, ysize)
+
+buffy = Buffer(10,10)
+buffy:write("test")
+buffy:write("blarf")
+buffy:setCursorPos(3,1)
+buffy:write("hello")
+print(buffy.text[1])
