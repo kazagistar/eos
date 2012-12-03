@@ -1,9 +1,14 @@
--- Metatable pairs
+-- pairs modified to allow iteration via metatable
 local originalPairs = pairs
 function pairs(t)
-  local p = getmetatable(t).__pairs or originalPairs
+  local p = (getmetatable(t) and getmetatable(t).__pairs) or originalPairs
   if p == pairs then return originalPairs(t) end
   return p(t)
+end
+
+-- dofile modified to allow parameters
+function dofile(filename, ...)
+  return setfenv(assert(loadfile(filename)), getfenv(2))(...)
 end
 
 -- With function by Neppy

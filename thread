@@ -20,9 +20,6 @@ thread.list()
     returns a table containing all the ids as keys and the names as values
 thread.current()
     returns id, name of the current thread
-thread.setDriver = function(event, func)
-    the given function will be called when the event occurs INSTEAD of passing it to threads
-    a driver can only be set once
 
 OBJECTS:
 thread.drivers
@@ -48,7 +45,7 @@ thread_sendall ...
     sends params as an event to all threads
     bypasses drivers
 --]]
-if thread then return end
+assert(not thread, "Only one instance of thread may be running at a time")
 thread = {}
 
 local current = 0 -- current running thread
@@ -197,13 +194,17 @@ drivers["thread_error"] = debugThreadEvent
 --####################################################################--
 -- Initialization
 -- create and run the "init" program
-local funcname = ...
-if not funcname then
+local func = ...
+if type(func) == "function" then
+    thread.spawn("init", func, ...)
+elseif type(func) == "string" then
+    thread.spawn("init", function(...) shell.run(...) end, ...)
+else
     print("Runs a program with multiprocessing library 'thread' availible")
     print("Usage: thread (init-program) [args...]")
     return
 end
-thread.spawn("init", function(...) shell.run(...) end, ...)
+
 while threadCount > 0 do
     local args = {coroutine_yield()}
     if drivers[args[1]] ~= nil then
@@ -220,6 +221,7 @@ while threadCount > 0 do
             threadCount = threadCount - 1
             threads[id] = nil
         end
+        halted = {}
     end
 end
 thread = nil
